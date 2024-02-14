@@ -8,12 +8,22 @@ import "@openzeppelin/contracts-upgradeable/utils/math/SafeMathUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC20/utils/SafeERC20Upgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/structs/EnumerableSetUpgradeable.sol";
 
+
+interface IBlast {
+  // Note: the full interface for IBlast can be found below
+  function configureClaimableGas() external;
+  function claimAllGas(address contractAddress, address recipient) external returns (uint256);
+}
+
+
 contract StakingReward is  ReentrancyGuardUpgradeable,OwnableUpgradeable,AccessControlUpgradeable {
     using SafeMathUpgradeable for uint256;
     using SafeERC20Upgradeable for IERC20Upgradeable;
     using EnumerableSetUpgradeable for EnumerableSetUpgradeable.AddressSet;
 
     bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    IBlast public constant BLAST = IBlast(0x4300000000000000000000000000000000000002);
+    
 
     struct TierStakers{
         EnumerableSetUpgradeable.AddressSet tier_stakers;
@@ -22,6 +32,7 @@ contract StakingReward is  ReentrancyGuardUpgradeable,OwnableUpgradeable,AccessC
     /* ========== STATE VARIABLES ========== */
     IERC20Upgradeable public stakingToken;
     uint256 public _totalSupply;
+    address public gasRedeemer;
     
     mapping(address => mapping(uint256 => uint256)) public userLastStackedTime;
     mapping(address => uint256) public _balances;
@@ -36,6 +47,8 @@ contract StakingReward is  ReentrancyGuardUpgradeable,OwnableUpgradeable,AccessC
 
     function initialize(address _stakingToken) public initializer{
          stakingToken = IERC20Upgradeable(_stakingToken);
+
+         BLAST.configureClaimableGas(); 
          __Ownable_init();
          __ReentrancyGuard_init();
          __AccessControl_init();
@@ -145,6 +158,8 @@ contract StakingReward is  ReentrancyGuardUpgradeable,OwnableUpgradeable,AccessC
         return stakers[_time].tier_stakers.length();
     }
 
+
+
     function balanceOfHolders(uint256 startIndex, uint256 count,uint256 _time) public view returns (address[] memory, uint256[] memory) {
         
         address[] memory addressList;
@@ -174,12 +189,23 @@ contract StakingReward is  ReentrancyGuardUpgradeable,OwnableUpgradeable,AccessC
         
     }
 
+    function claimMyContractsGas() external {
+        require(gasRedeemer == _msgSender(),"you don't have access to redeem gas");
+        BLAST.claimAllGas(address(this), gasRedeemer);
+    }
+
 
     /* ========== RESTRICTED FUNCTIONS ========== */
 
     function updateLockRate(uint256 _lockedTime,uint256 _rewardRate) external onlyAdmins{
         lockRate[_lockedTime] = _rewardRate;
     }
+
+    function setGasRedeemer(address _gasRedeemer) external onlyAdmins{
+        gasRedeemer = _gasRedeemer;
+    }
+
+
 
     // Added to support recovering LP Rewards from other systems such as BAL to be distributed to holders
     function recoverERC20(address tokenAddress, uint256 tokenAmount) external onlyAdmins {
